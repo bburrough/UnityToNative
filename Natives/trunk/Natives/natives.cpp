@@ -2,31 +2,66 @@
 #define BLIT_IT_NATIVES_DLL_COMPILE
 
 #include "natives.h"
+
 #include "threadutils.h"
+
+#include <list>
+#include <string>
 
 #include <Windows.h>
 
 using namespace std;
 
-ChooseFileSuccessCallback _chooseFileSuccessCallback = NULL;
-ChooseFileCancelledCallback _chooseFileCancelledCallback = NULL;
-
-pthread_mutex_t file_picker_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_t file_picker_thread;
-bool file_picker_running = false;
-
-void* LoadGcodeAsync(void* arg)
+struct ChooseFileContext
 {
-    const int buf_len = 260;
-    TCHAR cwd[buf_len] = { 0 };
+    ChooseFileSuccessCallback _chooseFileSuccessCallback;
+    ChooseFileCancelledCallback _chooseFileCancelledCallback;
+    pthread_t file_picker_thread;
+    list<wstring> filetype_names;
+    list<wstring> filetype_extensions;
+};
 
-    GetCurrentDirectory(buf_len, cwd);
+
+void* FilePickerThread(void* arg)
+{
+    ChooseFileContext* cfc = (ChooseFileContext*)arg;
+
+    const int buf_len = 260;
+    //TCHAR cwd[buf_len] = { 0 };
+
+    //GetCurrentDirectory(buf_len, cwd);
 
     OPENFILENAME ofn;       // common dialog box structure
     TCHAR szFile[buf_len];       // buffer for file name
                                  //HWND hwnd;              // owner window
                                  //HANDLE hf;              // file handle
-    TCHAR filter[64] = TEXT("G-code\0*.gcode\0All\0*.*\0");
+
+
+    
+    //string test("G-code\0*.gcode\0All\0*.*\0");
+    wstring filetype_filters;
+    list<wstring>::const_iterator ext_itr = cfc->filetype_extensions.begin();
+    for (list<wstring>::const_iterator name_itr = cfc->filetype_names.begin(); name_itr != cfc->filetype_names.end(); ++name_itr)
+    {
+        filetype_filters += *name_itr;
+        filetype_filters.push_back('\0');
+        filetype_filters += L"*.";
+        filetype_filters += *ext_itr;
+        filetype_filters.push_back('\0');
+        ++ext_itr;
+    }
+    filetype_filters += L"All";
+    filetype_filters.push_back('\0');
+    filetype_filters += L"*.*";
+    filetype_filters.push_back('\0');
+    
+
+    //TCHAR filter[64] = TEXT(((const char*)test.c_str()));
+
+    TCHAR* filter = (TCHAR*)filetype_filters.c_str();
+
+    
+    
 
     // Initialize OPENFILENAME
     ZeroMemory(&ofn, sizeof(ofn));
@@ -44,46 +79,55 @@ void* LoadGcodeAsync(void* arg)
     ofn.lpstrInitialDir = NULL;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR | OFN_READONLY;
 
-    SetCurrentDirectory(cwd);
+    //SetCurrentDirectory(cwd);
 
     if (GetOpenFileName(&ofn))
     {
-        if (_chooseFileSuccessCallback)
-            _chooseFileSuccessCallback();
+        pthread_testcancel();
+        if (cfc->_chooseFileSuccessCallback)
+            cfc->_chooseFileSuccessCallback(ofn.lpstrFile);
     }
     else
     {
-        if (_chooseFileCancelledCallback)
-            _chooseFileCancelledCallback();
+        pthread_testcancel();
+        if (cfc->_chooseFileCancelledCallback)
+            cfc->_chooseFileCancelledCallback();
     }
 
     return NULL;
 }
 
 
-void __stdcall RegisterChooseFileSuccessCallback(ChooseFileSuccessCallback callback)
+void* __stdcall CreateChooseFileContext()
 {
-    _chooseFileSuccessCallback = callback;
+    ChooseFileContext* cfc = new ChooseFileContext();
+    cfc->_chooseFileCancelledCallback = NULL;
+    cfc->_chooseFileSuccessCallback = NULL;
+    return cfc;
 }
 
 
-void __stdcall RegisterChooseFileCancelledCallback(ChooseFileCancelledCallback callback)
+void __stdcall AddChooseFileType(void* context, const wchar_t* name, const wchar_t* extension)
 {
-    _chooseFileCancelledCallback = callback;
+    ChooseFileContext* cfc = (ChooseFileContext*)context;
+    cfc->filetype_names.push_back(wstring(name));
+    cfc->filetype_extensions.push_back(wstring(extension));
 }
 
 
-void __stdcall ChooseFile()
+void __stdcall ChooseFile(void* context, ChooseFileSuccessCallback successCallback, ChooseFileCancelledCallback cancelledCallback)
 {
-    pthread_mutex_lock(&shared_machine_mutex);
-    if (shared_machine == NULL)
-    {
-        shared_machine = new Machine();
-        loading_thread_started = true;
-        pthread_create(&loading_thread, NULL, LoadGcodeAsync, NULL);
-    }
-    pthread_mutex_unlock(&shared_machine_mutex);
+    ChooseFileContext* cfc = (ChooseFileContext*)context;
+    cfc->_chooseFileSuccessCallback = successCallback;
+    cfc->_chooseFileCancelledCallback = cancelledCallback;
+    pthread_create(&cfc->file_picker_thread, NULL, FilePickerThread, cfc);
 }
 
 
+void __stdcall DestroyChooseFileContext(void* context)
+{
+    ChooseFileContext* cfc = (ChooseFileContext*)context;
+    pthread_cancel(cfc->file_picker_thread);
+    delete cfc;
+}
 

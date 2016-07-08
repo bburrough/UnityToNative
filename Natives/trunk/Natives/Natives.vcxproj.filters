@@ -18,6 +18,12 @@
     <ClInclude Include="natives.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="safelist.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="threadutils.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="natives.cpp">
