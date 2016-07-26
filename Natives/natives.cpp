@@ -1,16 +1,21 @@
 
 #define BLIT_IT_NATIVES_DLL_COMPILE
 
-#include "natives.h"
-
 #include "threadutils.h"
+
+
+#include "natives.h"
 
 #include <list>
 #include <string>
+#include <vector>
 
 #include <Windows.h>
+#include <roapi.h>
 
 using namespace std;
+
+
 
 struct ChooseFileContext
 {
@@ -19,24 +24,19 @@ struct ChooseFileContext
     pthread_t file_picker_thread;
     list<wstring> filetype_names;
     list<wstring> filetype_extensions;
+    wchar_t* chosenFilename;
 };
 
 
 void* FilePickerThread(void* arg)
-{
+{    
     ChooseFileContext* cfc = (ChooseFileContext*)arg;
 
-    const int buf_len = 260;
-    //TCHAR cwd[buf_len] = { 0 };
-
-    //GetCurrentDirectory(buf_len, cwd);
+    const int buf_len = 261;
+    cfc->chosenFilename = new wchar_t[buf_len];
+    memset(cfc->chosenFilename, 0, buf_len);
 
     OPENFILENAME ofn;       // common dialog box structure
-    TCHAR szFile[buf_len];       // buffer for file name
-                                 //HWND hwnd;              // owner window
-                                 //HANDLE hf;              // file handle
-
-
     
     //string test("G-code\0*.gcode\0All\0*.*\0");
     wstring filetype_filters;
@@ -54,24 +54,20 @@ void* FilePickerThread(void* arg)
     filetype_filters.push_back('\0');
     filetype_filters += L"*.*";
     filetype_filters.push_back('\0');
-    
+    filetype_filters.push_back('\0');
 
     //TCHAR filter[64] = TEXT(((const char*)test.c_str()));
 
-    TCHAR* filter = (TCHAR*)filetype_filters.c_str();
-
-    
-    
+    TCHAR* filter = (TCHAR*)filetype_filters.data();
 
     // Initialize OPENFILENAME
     ZeroMemory(&ofn, sizeof(ofn));
     ofn.lStructSize = sizeof(ofn);
     //ofn.hwndOwner = hwnd;
-    ofn.lpstrFile = szFile;
+    ofn.lpstrFile = cfc->chosenFilename;
     // Set lpstrFile[0] to '\0' so that GetOpenFileName does not 
     // use the contents of szFile to initialize itself.
-    ofn.lpstrFile[0] = '\0';
-    ofn.nMaxFile = buf_len;
+    ofn.nMaxFile = buf_len - 1; // use -1 because we're paranoid that Windows will stupidly not include a null terminator
     ofn.lpstrFilter = filter;
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = NULL;
@@ -85,7 +81,9 @@ void* FilePickerThread(void* arg)
     {
         pthread_testcancel();
         if (cfc->_chooseFileSuccessCallback)
-            cfc->_chooseFileSuccessCallback(ofn.lpstrFile);
+        {
+            cfc->_chooseFileSuccessCallback(cfc->chosenFilename);
+        }
     }
     else
     {
@@ -103,6 +101,7 @@ void* __stdcall CreateChooseFileContext()
     ChooseFileContext* cfc = new ChooseFileContext();
     cfc->_chooseFileCancelledCallback = NULL;
     cfc->_chooseFileSuccessCallback = NULL;
+    cfc->chosenFilename = NULL;
     return cfc;
 }
 
@@ -128,6 +127,9 @@ void __stdcall DestroyChooseFileContext(void* context)
 {
     ChooseFileContext* cfc = (ChooseFileContext*)context;
     pthread_cancel(cfc->file_picker_thread);
+    pthread_join(cfc->file_picker_thread, NULL);
+    if (cfc->chosenFilename != NULL)
+        delete[] cfc->chosenFilename;
     delete cfc;
 }
 
