@@ -18,6 +18,8 @@ typedef void(__stdcall *ChooseFileCancelledCallback)();
 
 DLLEXPORT void* __stdcall CreateChooseFileContext();
 DLLEXPORT void __stdcall AddChooseFileType(void* context, const wchar_t* name, const wchar_t* extension);
+DLLEXPORT void __stdcall SetChooseFileModeSaveAs(void* context);
+DLLEXPORT void __stdcall SetChooseFileModeOpen(void* context);
 DLLEXPORT void __stdcall ChooseFile(void* context, ChooseFileSuccessCallback successCallback, ChooseFileCancelledCallback cancelledCallback);
 DLLEXPORT void __stdcall DestroyChooseFileContext(void* context);
 

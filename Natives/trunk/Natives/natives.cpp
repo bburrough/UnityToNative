@@ -25,7 +25,22 @@ struct ChooseFileContext
     list<wstring> filetype_names;
     list<wstring> filetype_extensions;
     wchar_t* chosenFilename;
+    bool saveAs;
 };
+
+
+void __stdcall SetChooseFileModeSaveAs(void* context)
+{
+    ChooseFileContext* cfc = (ChooseFileContext*)context;
+    cfc->saveAs = true;
+}
+
+
+void __stdcall SetChooseFileModeOpen(void* context)
+{
+    ChooseFileContext* cfc = (ChooseFileContext*)context;
+    cfc->saveAs = false;
+}
 
 
 void* FilePickerThread(void* arg)
@@ -37,7 +52,7 @@ void* FilePickerThread(void* arg)
     memset(cfc->chosenFilename, 0, buf_len);
 
     OPENFILENAME ofn;       // common dialog box structure
-    
+
     //string test("G-code\0*.gcode\0All\0*.*\0");
     wstring filetype_filters;
     list<wstring>::const_iterator ext_itr = cfc->filetype_extensions.begin();
@@ -76,8 +91,13 @@ void* FilePickerThread(void* arg)
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR | OFN_READONLY;
 
     //SetCurrentDirectory(cwd);
+    BOOL status;
+    if (cfc->saveAs)
+        status = GetSaveFileName(&ofn);
+    else
+        status = GetOpenFileName(&ofn);
 
-    if (GetOpenFileName(&ofn))
+    if (status)
     {
         pthread_testcancel();
         if (cfc->_chooseFileSuccessCallback)
@@ -102,6 +122,7 @@ void* __stdcall CreateChooseFileContext()
     cfc->_chooseFileCancelledCallback = NULL;
     cfc->_chooseFileSuccessCallback = NULL;
     cfc->chosenFilename = NULL;
+    cfc->saveAs = false;
     return cfc;
 }
 
