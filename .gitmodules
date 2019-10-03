@@ -1,0 +1,3 @@
+[submodule "ExternalProjects/pthreads-w32"]
+	path = ExternalProjects/pthreads-w32
+	url = https://github.com/bburrough/pthreads-w32
